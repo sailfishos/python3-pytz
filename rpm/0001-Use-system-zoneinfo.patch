@@ -1,0 +1,81 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ville Nummela <ville.nummela@jolla.com>
+Date: Tue, 6 Sep 2022 15:51:45 +0300
+Subject: [PATCH] Use system zoneinfo
+
+Heavily influenced by similar patch in Fedora
+---
+ src/pytz/__init__.py | 49 ++++++++++++++++++++++++++++++++------------
+ 1 file changed, 36 insertions(+), 13 deletions(-)
+
+diff --git a/src/pytz/__init__.py b/src/pytz/__init__.py
+index 50c5b551ffe046e9adc0477e7d0a1adefb71419e..d3c4ea3e2d4426e279b9e23b38201ae60e6cad0c 100644
+--- a/src/pytz/__init__.py
++++ b/src/pytz/__init__.py
+@@ -74,6 +74,9 @@ else:  # Python 2.x
+         """
+         return s.encode('ASCII')
+ 
++_tzinfo_dir = os.getenv("TZDIR") or "/usr/share/zoneinfo"
++if _tzinfo_dir.endswith(os.sep):
++    _tzinfo_dir = _tzinfo_dir[:-1]
+ 
+ def open_resource(name):
+     """Open a resource from the zoneinfo subdir for reading.
+@@ -92,19 +95,7 @@ def open_resource(name):
+     if zoneinfo_dir is not None:
+         filename = os.path.join(zoneinfo_dir, *name_parts)
+     else:
+-        filename = os.path.join(os.path.dirname(__file__),
+-                                'zoneinfo', *name_parts)
+-        if not os.path.exists(filename):
+-            # http://bugs.launchpad.net/bugs/383171 - we avoid using this
+-            # unless absolutely necessary to help when a broken version of
+-            # pkg_resources is installed.
+-            try:
+-                from pkg_resources import resource_stream
+-            except ImportError:
+-                resource_stream = None
+-
+-            if resource_stream is not None:
+-                return resource_stream(__name__, 'zoneinfo/' + name)
++        filename = os.path.join(_tzinfo_dir, *name_parts)
+     return open(filename, 'rb')
+ 
+ 
+@@ -514,3 +505,35 @@ def _test():
+ 
+ if __name__ == '__main__':
+     _test()
++
++all_timezones = []
++for root, dirs, files in os.walk(_tzinfo_dir):
++    for exclude in 'posix', 'right':
++        if exclude in dirs:
++            del dirs[dirs.index(exclude)]
++
++    all_timezones.extend(os.path.join(root, tz_file)[len(_tzinfo_dir)+1:]
++            for tz_file in files
++            if tz_file != 'README' and tz_file != 'Theory'
++            and '.' not in tz_file)
++all_timezones = LazyList(
++         tz for tz in all_timezones if resource_exists(tz))
++         
++all_timezones_set = LazySet(all_timezones)
++
++common_timezones = [l.split()[2]
++        for l in open(os.path.join(_tzinfo_dir, 'zone.tab'))
++        if l != '' and l[0] != '#']
++common_timezones.extend(
++        ['GMT',
++         'US/Alaska',
++         'US/Arizona',
++         'US/Central',
++         'US/Eastern',
++         'US/Hawaii',
++         'US/Mountain',
++         'US/Pacific',
++         'UTC'])
++common_timezones = LazyList(
++             tz for tz in common_timezones if tz in all_timezones)
++common_timezones_set = LazySet(common_timezones)
